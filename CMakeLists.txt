@@ -11,7 +11,10 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
-  genmsg
+  roslib
+  sensor_msgs
+  cv_bridge
+  image_transport
 )
 
 ## Declare ROS messages and services
