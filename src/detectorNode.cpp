@@ -1,138 +1,138 @@
+// include for tkDNN
 #include <iostream>
 #include <signal.h>
 #include <stdlib.h>     /* srand, rand */
 #include <unistd.h>
 #include <mutex>
-
-#include "CenternetDetection.h"
-#include "MobilenetDetection.h"
 #include "Yolo3Detection.h"
 
-bool gRun;
-bool SAVE_RESULT = false;
+// include for ROS
+#include <ros/package.h>
+#include <ros/ros.h>
+#include <image_transport/image_transport.h>
+#include <opencv2/highgui/highgui.hpp>
+#include <cv_bridge/cv_bridge.h>
 
-void sig_handler(int signo) {
-    std::cout<<"request gateway stop\n";
-    gRun = false;
-}
+static const std::string OPENCV_WINDOW = "Image window";
+static const int n_classes = 3;
+static const int n_batch = 1;
 
-int main(int argc, char *argv[]) {
-
-    std::cout<<"detection\n";
-    signal(SIGINT, sig_handler);
-
-
-    std::string net = "yolo3_berkeley.rt";
-    if(argc > 1)
-        net = argv[1]; 
-    std::string input = "../demo/yolo_test.mp4";
-    if(argc > 2)
-        input = argv[2]; 
-    char ntype = 'y';
-    if(argc > 3)
-        ntype = argv[3][0]; 
-    int n_classes = 80;
-    if(argc > 4)
-        n_classes = atoi(argv[4]); 
-    int n_batch = 1;
-    if(argc > 5)
-        n_batch = atoi(argv[5]); 
-    bool show = true;
-    if(argc > 6)
-        show = atoi(argv[6]); 
-
-    if(n_batch < 1 || n_batch > 64)
-        FatalError("Batch dim not supported");
-
-    if(!show)
-        SAVE_RESULT = true;
-
-    tk::dnn::Yolo3Detection yolo;
-    tk::dnn::CenternetDetection cnet;
-    tk::dnn::MobilenetDetection mbnet;  
-
-    tk::dnn::DetectionNN *detNN;  
-
-    switch(ntype)
-    {
-        case 'y':
-            detNN = &yolo;
-            break;
-        case 'c':
-            detNN = &cnet;
-            break;
-        case 'm':
-            detNN = &mbnet;
-            n_classes++;
-            break;
-        default:
-        FatalError("Network type not allowed (3rd parameter)\n");
-    }
-
-    detNN->init(net, n_classes, n_batch);
-
-    gRun = true;
-
-    cv::VideoCapture cap(input);
-    if(!cap.isOpened())
-        gRun = false; 
-    else
-        std::cout<<"camera started\n";
-
-    cv::VideoWriter resultVideo;
-    if(SAVE_RESULT) {
-        int w = cap.get(cv::CAP_PROP_FRAME_WIDTH);
-        int h = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-        resultVideo.open("result.mp4", cv::VideoWriter::fourcc('M','P','4','V'), 30, cv::Size(w, h));
-    }
-
-    cv::Mat frame;
-    if(show)
-        cv::namedWindow("detection", cv::WINDOW_NORMAL);
-
+void imageCallback(const sensor_msgs::ImageConstPtr& msg, tk::dnn::DetectionNN *net)
+{
+    cv_bridge::CvImagePtr cv_ptr;
     std::vector<cv::Mat> batch_frame;
     std::vector<cv::Mat> batch_dnn_input;
+    
+    try
+    {
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
 
-    while(gRun) {
-        batch_dnn_input.clear();
-        batch_frame.clear();
+        batch_frame.push_back(cv_ptr->image);
+
+        // dnn input will be resized to network format
+        batch_dnn_input.push_back(cv_ptr->image.clone());
+
+        // network inference
+        net->update(batch_dnn_input, n_batch);
+        net->draw(batch_frame);
         
-        for(int bi=0; bi< n_batch; ++bi){
-            cap >> frame; 
-            if(!frame.data) 
-                break;
-            
-            batch_frame.push_back(frame);
-
-            // this will be resized to the net format
-            batch_dnn_input.push_back(frame.clone());
-        } 
-        if(!frame.data) 
-            break;
-    
-        //inference
-        detNN->update(batch_dnn_input, n_batch);
-        detNN->draw(batch_frame);
-
-        if(show){
-            for(int bi=0; bi< n_batch; ++bi){
-                cv::imshow("detection", batch_frame[bi]);
-                cv::waitKey(1);
-            }
-        }
-        if(n_batch == 1 && SAVE_RESULT)
-            resultVideo << frame;
+        cv::imshow("view", batch_frame[0]);
+        cv::waitKey(30);
     }
+    catch(cv_bridge::Exception& e)
+    {
+        ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+    }
+}
 
-    std::cout<<"detection end\n";   
-    double mean = 0; 
-    
-    std::cout<<COL_GREENB<<"\n\nTime stats:\n";
-    std::cout<<"Min: "<<*std::min_element(detNN->stats.begin(), detNN->stats.end())/n_batch<<" ms\n";    
-    std::cout<<"Max: "<<*std::max_element(detNN->stats.begin(), detNN->stats.end())/n_batch<<" ms\n";    
-    for(int i=0; i<detNN->stats.size(); i++) mean += detNN->stats[i]; mean /= detNN->stats.size();
-    std::cout<<"Avg: "<<mean/n_batch<<" ms\t"<<1000/(mean/n_batch)<<" FPS\n"<<COL_END;   
-    
+int main(int argc, char **argv)
+{
+    ros::init(argc, argv, "image_listener");
+    ros::NodeHandle nh;
+
+    // tkDNN config and initialisation
+    // TODO: change to use config file to allow more flexible model switching
+    std::string path = ros::package::getPath("tkdnn_yolo_ros");
+    std::string net = path + "/src/models/yolo4_cones_int8.rt";
+
+    tk::dnn::Yolo3Detection yolo;
+    tk::dnn::DetectionNN *detNN;
+    detNN = &yolo;
+    detNN->init(net, n_classes, n_batch);
+
+    cv::namedWindow("view");
+    image_transport::ImageTransport it(nh);
+    image_transport::Subscriber sub = it.subscribe("usb_cam/image_raw", 1, 
+        boost::bind(imageCallback, _1, detNN));
+    ros::spin();
+    cv::destroyWindow("view");
 
     return 0;
 }
+
+
+// int main(int argc, char **argv)
+// {
+//     ros::init(argc, argv, "detectorNode");
+//     ros::NodeHandle n;
+//     ros::Publisher chatter_pub = n.advertise<std_msgs::String>("chatter", 1000);
+//     ros::Rate loop_rate(10);
+
+//     // construct path to the configs
+
+//     // grab image from an image stream
+//     image_transport::ImageTransport it(n);
+//     image_transport::Subscriber sub = it.subscribe("usb_cam/image_raw", 1, imageCallback);
+    
+//     // image_transport::Subscriber sub = it.subscribe("jetbot_camera/raw", 1,
+//     //     [&detector, &res](const sensor_msgs::ImageConstPtr &msg) -> void { imageCallback(msg, detector, res); });
+
+//     // cv::Mat mat_image = cv::imread(img_path, cv::IMREAD_UNCHANGED);
+
+//     // auto t0 = std::chrono::high_resolution_clock::now();
+//     // detector.detect(mat_image, res);
+//     // auto t1 = std::chrono::high_resolution_clock::now();
+
+//     // std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t1 - t0);
+
+//     /**
+// 	 * A count of how many messages we have sent. This is used to create
+// 	 * a unique string for each message.
+// 	 */
+//     int count = 0;
+//     while (ros::ok())
+//     {
+// 	/**
+//      * This is a message object. You stuff it with data, and then publish it.
+//      */
+//         std_msgs::String msg;
+
+//         std::stringstream ss;
+//         ss << "publishing yolo results " << count << std::endl;
+//         // ss << "inference duration = " << time_span.count() << " seconds." << std::endl;
+
+//         // DEBUG
+//         // ss << cfg_path << std::endl;
+//         // ss << weights_path << std::endl;
+//         // ss << img_path << std::endl;
+
+//         // publish detection results
+//         for (const auto &r : res)
+//         {
+//             ss << "id:" << r.id << " prob:" << r.prob << " rect:" << r.rect << std::endl;
+//         }
+
+//         msg.data = ss.str();
+
+//         ROS_INFO("%s", msg.data.c_str());
+
+//         chatter_pub.publish(msg);
+
+//         ros::spinOnce();
+
+//         loop_rate.sleep();
+//         ++count;
+//     }
+
+//     return 0;
+// }
