@@ -20,5 +20,12 @@ Remember to clone in the submodule for `tkDNN`.
 git clone --recurse-submodules https://github.com/MURDriverless/tkdnn_yolo_rost
 ```
 
+To get the submodule after `git clone`. ([source](https://stackoverflow.com/questions/16773642/pull-git-submodules-after-cloning-project-from-github))
+
+```
+git pull --recurse-submodules
+git submodule update --recursive
+```
+
 Place the TensorRT models (.rt) within `src/models`.
 Currently the model used for inferene is defined in `detectorNode.cpp`.
