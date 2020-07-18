@@ -1,2 +1,5 @@
 .vscode/
 build/*
+
+# ignore all tensorrt files
+*.rt
