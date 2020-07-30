@@ -1,15 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(tkdnn_yolo_ros)
 
-# # http://sirien.metz.supelec.fr/depot/SIR/TutoROS/Codes/CMakeLists.txt.html
-# ## Find pkg_config
-# find_package(PkgConfig REQUIRED)
-
-# ## Use pkg_config to recover some dependencies
-# # The following defines the variables
-# # OPENCV_CFLAGS_OTHER, OPENCV_INCLUDE_DIRS, OPENCV_LIBRARIES, ...,
-# pkg_check_modules(OPENCV REQUIRED opencv)
-
 # Seems to need to look for OpenCV here, otherwise there is conflict between
 # cv_bridge's OpenCV and the Ubuntu OpenCV
 # also used catkin config --cmake-args -DOpenCV_DIR=/usr/local/share/OpenCV/
@@ -30,17 +21,34 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   cv_bridge
   image_transport
+  message_generation
 )
 
 ## Declare ROS messages and services
-# add_message_files(FILES Num.msg)
-# add_service_files(FILES AddTwoInts.srv)
+add_message_files(
+  FILES
+    BoundingBox.msg
+    BoundingBoxes.msg
+)
 
 ## Generate added messages and services
-# generate_messages(DEPENDENCIES std_msgs)
+generate_messages(
+  DEPENDENCIES
+    sensor_msgs
+    std_msgs
+)
 
 ## Declare a catkin package
-catkin_package()
+# catkin_package() 
+catkin_package(
+  CATKIN_DEPENDS 
+  roscpp 
+  std_msgs 
+  geometry_msgs 
+  sensor_msgs 
+  message_runtime 
+  roslib
+)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/src/tkDNN/cmake)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fPIC -Wno-deprecated-declarations -Wno-unused-variable")
@@ -63,6 +71,9 @@ include_directories(${CUDNN_INCLUDE_DIR})
 file(GLOB tkdnn_CUSRC "src/tkDNN/src/kernels/*.cu" "src/tkDNN/src/sorting.cu")
 cuda_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/tkDNN/include ${CUDA_INCLUDE_DIRS} ${CUDNN_INCLUDE_DIRS})
 cuda_add_library(kernels SHARED ${tkdnn_CUSRC})
+
+# cuda_include_directories(${CUDNN_INCLUDE_DIR})
+# cuda_add_executable(${PROJECT_NAME} src/KeypointDetector.cpp src/Utils.cpp src/EntropyCalibrator.cpp)
 
 #-------------------------------------------------------------------------------
 # External Libraries
@@ -87,10 +98,15 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/tkDNN/include ${CUDA_INCLUDE
 add_library(tkDNN SHARED ${tkdnn_SRC})
 target_link_libraries(tkDNN ${tkdnn_LIBS})
 
+
+add_library(keypoint src/KeypointDetector.cpp src/Utils.cpp src/EntropyCalibrator.cpp)
+target_link_libraries(keypoint ${OPENCV_LIBRARIES} ${catkin_LIBRARIES} nvonnxparser)
+
+
 #-------------------------------------------------------------------------------
 # Executables
 #-------------------------------------------------------------------------------
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 add_executable(talker src/talker.cpp)
 target_link_libraries(talker ${catkin_LIBRARIES})
@@ -99,4 +115,4 @@ add_executable(listener src/listener.cpp)
 target_link_libraries(listener ${catkin_LIBRARIES})
 
 add_executable(detectorNode src/detectorNode.cpp)
-target_link_libraries(detectorNode tkDNN ${OPENCV_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(detectorNode tkDNN keypoint ${OPENCV_LIBRARIES} ${catkin_LIBRARIES})

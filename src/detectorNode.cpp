@@ -6,6 +6,9 @@
 #include <mutex>
 #include "Yolo3Detection.h"
 
+// include for keypoint detector
+#include "KeypointDetector.h"
+
 // include for ROS
 #include <ros/package.h>
 #include <ros/ros.h>
@@ -28,6 +31,9 @@ class Detector
         void imageCallback(
             const sensor_msgs::ImageConstPtr& msg
         );
+
+    private:
+        std::unique_ptr<KeypointDetector> keypointDetector_;
 };
 
 void Detector::imageCallback(const sensor_msgs::ImageConstPtr& msg)
