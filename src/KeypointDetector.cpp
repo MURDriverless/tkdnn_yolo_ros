@@ -28,7 +28,7 @@ KeypointDetector::KeypointDetector(string onnxFile, string trtFile, int input_w,
 {
     runtime_ = createInferRuntime(logger_);
     assert(runtime_ != nullptr);
-    runtime_->setDLACore(0);
+    // runtime_->setDLACore(0);
 
     engine_ = engineFromFiles(onnxFile, trtFile, runtime_, maxBatch_, logger_, false);
 

@@ -172,6 +172,7 @@ void onnxToTRTModel(const std::string& modelFile,
 
     builder->setMaxBatchSize(maxBatchSize);
     builder->setMaxWorkspaceSize(1 << 20);
+
     if (useInt8 && builder->platformHasFastInt8())
     {
       builder->setInt8Mode(true);
@@ -184,13 +185,20 @@ void onnxToTRTModel(const std::string& modelFile,
     {
         builder->setFp16Mode(true);
     }
+
     builder->setStrictTypeConstraints(true);
     if (markOutput)
     {
         network->markOutput(*network->getLayer(network->getNbLayers()-1)->getOutput(0));
     }
 
-    ICudaEngine* engine = builder->buildCudaEngine(*network);
+    IBuilderConfig* config = builder->createBuilderConfig();
+    config->setMaxWorkspaceSize(1 << 20);
+
+    ICudaEngine* engine = builder->buildEngineWithConfig(*network, *config);
+
+    std::cout << "before assert" << endl;
+    // ICudaEngine* engine = builder->buildCudaEngine(*network);
     assert(engine);
 
     // serialize the engine, then close everything down
@@ -238,3 +246,42 @@ ICudaEngine* engineFromFiles(string onnxFile, string trtFile, IRuntime *runtime,
     }
     return engine;
 }
+
+// function which loads engine directly from a tensorrt file
+// ICudaEngine* engineFromFiles(string trtFile, IRuntime *runtime, int batchSize, Logger &logger, bool useInt8, bool markOutput, IInt8EntropyCalibrator* calibrator)
+// {
+//     ICudaEngine *engine;
+//     fstream file;
+//     file.open(trtFile, ios::binary | ios::in);
+//     if(!file.is_open())
+//     {
+//         IHostMemory* trtModelStream{nullptr};
+//         onnxToTRTModel(onnxFile, batchSize, trtModelStream, logger, useInt8, markOutput, calibrator);
+//         assert(trtModelStream != nullptr);
+
+//         engine = runtime->deserializeCudaEngine(trtModelStream->data(), trtModelStream->size(), nullptr);
+//         assert(engine != nullptr);
+//         trtModelStream->destroy();
+
+//         nvinfer1::IHostMemory* data = engine->serialize();
+//         std::ofstream save_file;
+//         save_file.open(trtFile, std::ios::binary | std::ios::out);
+
+//         save_file.write((const char*)data->data(), data->size());
+//         save_file.close();
+//     }
+//     else
+//     {
+//         file.seekg(0, ios::end);
+//         int length = file.tellg();
+//         file.seekg(0, ios::beg);
+//         std::unique_ptr<char[]> data(new char[length]);
+//         file.read(data.get(), length);
+
+//         file.close();
+
+//         engine = runtime->deserializeCudaEngine(data.get(), length, nullptr);
+//         assert(engine != nullptr);
+//     }
+//     return engine;
+// }

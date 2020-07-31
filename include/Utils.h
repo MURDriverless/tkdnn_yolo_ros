@@ -145,6 +145,9 @@ void onnxToTRTModel(const std::string& modelFile,
 nvinfer1::ICudaEngine* engineFromFiles(std::string onnxFile, std::string trtFile, nvinfer1::IRuntime *runtime,
                                        int batchSize, Logger &logger, bool useInt8 = true, bool markOutput = false, nvinfer1::IInt8EntropyCalibrator* calibrator = nullptr);
 
+// nvinfer1::ICudaEngine* engineFromTrtFile(std::string trtFile, nvinfer1::IRuntime *runtime,
+//                                        int batchSize, Logger &logger, bool useInt8 = true, bool markOutput = false, nvinfer1::IInt8EntropyCalibrator* calibrator = nullptr);
+
 inline int64_t volume(const nvinfer1::Dims& d)
 {
     return std::accumulate(d.d, d.d + d.nbDims, 1, std::multiplies<int64_t>());

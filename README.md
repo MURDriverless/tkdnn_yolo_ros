@@ -29,3 +29,7 @@ git submodule update --recursive
 
 Place the TensorRT models (.rt) within `src/models`.
 Currently the model used for inferene is defined in `detectorNode.cpp`.
+
+## Note
+
+The parts for traffic cone keypoints detection were originally forked from https://github.com/cv-core/tensorrt_ros which containts code for inference and format conversion in C++.
