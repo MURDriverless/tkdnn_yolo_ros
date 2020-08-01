@@ -35,8 +35,7 @@ class Detector
         tk::dnn::DetectionNN *detNN;
         std::vector<tk::dnn::box> bboxs;
 
-
-        Detector();
+        Detector(std::string yolo_rt, std::string kp_onnx, std::string kp_trt);
         void drawKeypoints(cv::Mat &img, tkdnn_yolo_ros::BoundingBoxes boxes);
         void imageCallback(const sensor_msgs::ImageConstPtr& msg);
 
@@ -47,7 +46,7 @@ class Detector
         int maxBatch;
 };
 
-Detector::Detector()
+Detector::Detector(std::string yolo_rt, std::string kp_onnx, std::string kp_trt)
 {
     keypointsW = 80;
     keypointsH = 80;
@@ -55,12 +54,18 @@ Detector::Detector()
     
     keypointDetector_.reset(
         new KeypointDetector(
-            ros::package::getPath("tkdnn_yolo_ros") + "/src/models/best_keypoints.onnx", 
-            ros::package::getPath("tkdnn_yolo_ros") + "/src/models/best_keypoints.trt", 
+            ros::package::getPath("tkdnn_yolo_ros") + "/src/models/keypoints.onnx", 
+            ros::package::getPath("tkdnn_yolo_ros") + "/src/models/keypoints.trt", 
             keypointsW, 
             keypointsH, 
             maxBatch)
     );
+
+    std::string path = ros::package::getPath("tkdnn_yolo_ros");
+    std::string net = path + "/src/models/yolo4_cones_int8.rt";
+
+    detNN = &yolo;
+    detNN->init(net, n_classes, n_batch);
 }
 
 void Detector::drawKeypoints(cv::Mat &img, tkdnn_yolo_ros::BoundingBoxes boxes)
@@ -126,24 +131,15 @@ void Detector::imageCallback(const sensor_msgs::ImageConstPtr& msg)
         // keypoint network inference
         std::vector<std::vector<cv::Point2f>> keypoints = keypointDetector_->doInference(rois);
 
-        std::cout << "num keypoint sets = " << keypoints.size() << std::endl;
-        std::cout << "num bounding boxes = " << boxes.bounding_boxes.size() << std::endl;
-        // std::cout << "num keypoint sets = " << keypoints.size() << std::endl;
-
         // post process keypoints results
         for (unsigned int i = 0; i < boxes.bounding_boxes.size(); ++i)
         {
-            std::cout << "i = " << i << ", keypoints = " << keypoints[i].size() << std::endl;
-            
             for (auto pt : keypoints[i])
             {
                 geometry_msgs::Point point;
                 point.x = boxes.bounding_boxes[i].xmin + pt.x;
                 point.y = boxes.bounding_boxes[i].ymin + pt.y;
                 point.z = 0;
-
-                std::cout << pt.x << "   " << pt.y << std::endl;
-
                 boxes.bounding_boxes[i].keypoints.push_back(point);
             }
         }
@@ -167,25 +163,21 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "image_listener");
     ros::NodeHandle nh;
 
-    // parse parameters
+    // Parse parameters
+    std::string yolo_rt_path;
+    std::string kp_onnx_path;
+    std::string kp_trt_path;
+    nh.getParam("yolo_rt_path", yolo_rt_path);
+    nh.getParam("keypoints_onnx_path", kp_onnx_path);
+    nh.getParam("keypoints_trt_path", kp_trt_path);
 
-
-    // tkDNN config and initialisation
-    // TODO: change to use config file to allow more flexible model switching
-    std::string path = ros::package::getPath("tkdnn_yolo_ros");
-    std::string net = path + "/src/models/yolo4_cones_int8.rt";
-
-    Detector d;
-    d.detNN = &d.yolo;
-    d.detNN->init(net, n_classes, n_batch);
-
-    // keypoint detector config and initialisation
-    
+    // Initialise detector
+    Detector detector(yolo_rt_path, kp_onnx_path, kp_trt_path);
 
     cv::namedWindow("view");
     image_transport::ImageTransport it(nh);
     image_transport::Subscriber sub = it.subscribe("usb_cam/image_raw", 1,
-        &Detector::imageCallback, &d);
+        &Detector::imageCallback, &detector);
 
     while (ros::ok())
     {
@@ -194,9 +186,9 @@ int main(int argc, char **argv)
         std_msgs::String msg;
         std::stringstream ss;
         ss << "publishing yolo results" << std::endl;
-        ss << "num objects detected = " << d.bboxs.size() << std::endl;
+        ss << "num objects detected = " << detector.bboxs.size() << std::endl;
 
-        for (const auto &b : d.bboxs)
+        for (const auto &b : detector.bboxs)
         {
             ss << "id:" << b.cl << " prob:" << b.prob << std::endl;
         }

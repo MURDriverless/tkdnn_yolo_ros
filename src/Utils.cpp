@@ -150,25 +150,12 @@ void onnxToTRTModel(const std::string& modelFile,
                     IHostMemory*& trtModelStream, Logger &logger, bool useInt8, bool markOutput, IInt8EntropyCalibrator* calibrator)
 {
     IBuilder* builder = createInferBuilder(logger);
-    nvinfer1::INetworkDefinition* network = builder->createNetwork();
+
+    const auto explicitBatch = 1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+    nvinfer1::INetworkDefinition* network = builder->createNetworkV2(explicitBatch);
 
     auto parser = nvonnxparser::createParser(*network, logger);
-
-    std::ifstream onnx_file(modelFile.c_str(), std::ios::binary | std::ios::ate);
-    std::streamsize file_size = onnx_file.tellg();
-    onnx_file.seekg(0, std::ios::beg);
-    std::vector<char> onnx_buf(file_size);
-    if(!onnx_file.read(onnx_buf.data(), onnx_buf.size()) ) 
-    {
-        string msg("failed to open onnx file");
-        logger.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
-    }
-
-    if (!parser->parse(onnx_buf.data(), onnx_buf.size()))
-    {
-        string msg("failed to parse onnx file");
-        logger.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
-    }
+    parser->parseFromFile(modelFile.c_str(), 2);
 
     builder->setMaxBatchSize(maxBatchSize);
     builder->setMaxWorkspaceSize(1 << 20);
@@ -196,9 +183,6 @@ void onnxToTRTModel(const std::string& modelFile,
     config->setMaxWorkspaceSize(1 << 20);
 
     ICudaEngine* engine = builder->buildEngineWithConfig(*network, *config);
-
-    std::cout << "before assert" << endl;
-    // ICudaEngine* engine = builder->buildCudaEngine(*network);
     assert(engine);
 
     // serialize the engine, then close everything down
@@ -246,42 +230,3 @@ ICudaEngine* engineFromFiles(string onnxFile, string trtFile, IRuntime *runtime,
     }
     return engine;
 }
-
-// function which loads engine directly from a tensorrt file
-// ICudaEngine* engineFromFiles(string trtFile, IRuntime *runtime, int batchSize, Logger &logger, bool useInt8, bool markOutput, IInt8EntropyCalibrator* calibrator)
-// {
-//     ICudaEngine *engine;
-//     fstream file;
-//     file.open(trtFile, ios::binary | ios::in);
-//     if(!file.is_open())
-//     {
-//         IHostMemory* trtModelStream{nullptr};
-//         onnxToTRTModel(onnxFile, batchSize, trtModelStream, logger, useInt8, markOutput, calibrator);
-//         assert(trtModelStream != nullptr);
-
-//         engine = runtime->deserializeCudaEngine(trtModelStream->data(), trtModelStream->size(), nullptr);
-//         assert(engine != nullptr);
-//         trtModelStream->destroy();
-
-//         nvinfer1::IHostMemory* data = engine->serialize();
-//         std::ofstream save_file;
-//         save_file.open(trtFile, std::ios::binary | std::ios::out);
-
-//         save_file.write((const char*)data->data(), data->size());
-//         save_file.close();
-//     }
-//     else
-//     {
-//         file.seekg(0, ios::end);
-//         int length = file.tellg();
-//         file.seekg(0, ios::beg);
-//         std::unique_ptr<char[]> data(new char[length]);
-//         file.read(data.get(), length);
-
-//         file.close();
-
-//         engine = runtime->deserializeCudaEngine(data.get(), length, nullptr);
-//         assert(engine != nullptr);
-//     }
-//     return engine;
-// }
